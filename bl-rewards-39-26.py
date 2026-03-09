@@ -13,10 +13,9 @@ from diagrams.aws.database import DynamodbTable
 from diagrams.aws.network import APIGateway
 from diagrams.aws.storage import SimpleStorageServiceS3Bucket
 from diagrams.aws.management import SystemsManagerParameterStore
-from diagrams.aws.security import IdentityAndAccessManagementIamRole
 
 
-def icon_with_label(icon_node: Node, text: str, *, fontsize: str = "22") -> Node:
+def icon_with_label(icon_node: Node, text: str, *, fontsize: str = "48") -> Node:
     """
     Render the icon without a label, and render text as a separate plaintext node.
     This prevents label text from being drawn on top of the icon.
@@ -34,23 +33,30 @@ def icon_with_label(icon_node: Node, text: str, *, fontsize: str = "22") -> Node
     return icon_node
 
 
+# Race-purse-like "horizontal slide" tuning
 graph_attr = {
     "rankdir": "LR",
-    "fontsize": "24",
-    "pad": "1.5",
-    "nodesep": "1.2",
-    "ranksep": "1.5",
+    # Make it "slide-shaped" (Graphviz uses inches for size)
+    "ratio": "fill",
+    "size": "46,25!",
+    "pad": "0.55",
+    # Layout tuning: encourage horizontal spread, reduce vertical expansion
+    "nodesep": "0.9",
+    "ranksep": "0.8",
     "splines": "spline",
+    "compound": "true",
+    "newrank": "true",
+    "fontsize": "48",
 }
 
 # Keep icon node labels off; text labels are separate plaintext nodes.
 node_attr = {
-    "fontsize": "1",
+    "fontsize": "15",
     "margin": "0",
 }
 
 edge_attr = {
-    "fontsize": "18",
+    "fontsize": "28",
 }
 
 with Diagram(
@@ -69,8 +75,11 @@ with Diagram(
     with Cluster("AWS Account"):
         with Cluster("Deployment Region"):
             with Cluster("Burrito League Rewards Stack"):
-                appsync = icon_with_label(Appsync(""), "AWS AppSync GraphQL API\n(runner-rewards-api)")
-                api_gateway = icon_with_label(APIGateway(""), "Amazon API Gateway\n(RunnerRewardsRestApi)\n/redeem")
+                appsync = icon_with_label(Appsync(""), "AWS AppSync GraphQL API")
+                api_gateway = icon_with_label(
+                    APIGateway(""),
+                    "Amazon API Gateway",
+                )
 
                 with Cluster("GraphQL Resolvers"):
                     query_lambda = icon_with_label(Lambda(""), "QueryResolverLambda")
@@ -85,19 +94,23 @@ with Diagram(
                     runners_table = icon_with_label(DynamodbTable(""), "RunnersTable")
                     hosts_table = icon_with_label(DynamodbTable(""), "HostsTable")
                     rewards_table = icon_with_label(DynamodbTable(""), "RewardsTable")
-                    redemption_requests_table = icon_with_label(DynamodbTable(""), "RedemptionRequestsTable")
+                    redemption_requests_table = icon_with_label(
+                        DynamodbTable(""),
+                        "RedemptionsTable",
+                    )
 
                 with Cluster("Storage"):
                     proof_bucket = icon_with_label(
                         SimpleStorageServiceS3Bucket(""),
-                        "ProofOfWorkBucket\n(runner-rewards-proof-<account>)",
+                        "ProofOfWorkBucket",
                     )
 
                 with Cluster("Config / Secrets"):
                     param_store = icon_with_label(
                         SystemsManagerParameterStore(""),
-                        "SSM Parameter Store\n(TREMENDOUS_API_KEY,\nTOKEN_SECRET_PARAM)",
+                        "SSM Secret Store",
                     )
+
     # NextJS -> GraphQL
     web_client >> Edge(label="GraphQL over HTTPS") >> appsync
 
@@ -131,12 +144,26 @@ with Diagram(
     redeem_lambda >> Edge(label="GetParameter") >> param_store
     redeem_lambda >> Edge(label="Send reward / fulfillment") >> tremendous
 
-    # IAM relationships (optional / conceptual)
-    cw_logs_policy >> auth_role
-    cw_logs_policy >> query_role
-    cw_logs_policy >> mutation_role
-    cw_logs_policy >> redeem_role
-
-    auth_role >> auth_role  # keeps node in cluster without extra arrows to lambdas
+    # same-rank rows (key for horizontal legibility)
+    d.dot.subgraph(
+        name="rank_resolvers",
+        graph_attr={"rank": "same"},
+        body=[f"{query_lambda._id}", f"{mutation_lambda._id}"],
+    )
+    d.dot.subgraph(
+        name="rank_rest",
+        graph_attr={"rank": "same"},
+        body=[f"{redeem_lambda._id}", f"{webhook_lambda._id}"],
+    )
+    d.dot.subgraph(
+        name="rank_tables",
+        graph_attr={"rank": "same"},
+        body=[
+            f"{runners_table._id}",
+            f"{hosts_table._id}",
+            f"{rewards_table._id}",
+            f"{redemption_requests_table._id}",
+        ],
+    )
 
 print("Diagram generated: bl_rewards_architecture.png")
