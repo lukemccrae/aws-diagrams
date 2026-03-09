@@ -14,6 +14,14 @@ from diagrams.aws.network import APIGateway
 from diagrams.aws.storage import SimpleStorageServiceS3Bucket
 from diagrams.aws.management import SystemsManagerParameterStore
 
+CLUSTER_LABEL_ATTR = {
+    "fontsize": "36",
+    "labelfontsize": "36",
+    "fontname": "Helvetica",
+}
+
+FONT_SIZE = "36"
+
 
 def icon_with_label(icon_node: Node, text: str, *, fontsize: str = "48") -> Node:
     """
@@ -62,6 +70,8 @@ node_attr = {
 
 edge_attr = {
     "fontsize": "28",
+    "arrowsize": "3.0",   # default ~1.0; try 1.5–3.0
+    "penwidth": "2.5",    # makes the edge line thicker
 }
 
 with Diagram(
@@ -77,25 +87,30 @@ with Diagram(
     web_client = icon_with_label(Client(""), "NextJS/Web Client\n(Burrito League Rewards UI)")
     tremendous = icon_with_label(User(""), "Tremendous\n(External)")
 
-    with Cluster("AWS Account"):
-        with Cluster("Deployment Region"):
-            with Cluster("Burrito League Rewards Stack"):
+    with Cluster("AWS Account", graph_attr=CLUSTER_LABEL_ATTR,):
+        with Cluster("Deployment Region", graph_attr=CLUSTER_LABEL_ATTR,):
+            with Cluster("Burrito League Rewards Stack", graph_attr=CLUSTER_LABEL_ATTR,):
                 appsync = icon_with_label(Appsync(""), "AWS AppSync GraphQL API")
                 api_gateway = icon_with_label(
                     APIGateway(""),
                     "Amazon API Gateway",
                 )
 
-                with Cluster("GraphQL Resolvers"):
+                with Cluster("GraphQL Resolvers",
+                    graph_attr=CLUSTER_LABEL_ATTR,
+                ):
                     query_lambda = icon_with_label(Lambda(""), "QueryResolverLambda")
                     mutation_lambda = icon_with_label(Lambda(""), "MutationResolverLambda")
 
-                with Cluster("REST/API Handlers"):
+                with Cluster("REST/API Handlers",
+                    graph_attr=CLUSTER_LABEL_ATTR,
+                ):
                     redeem_lambda = icon_with_label(Lambda(""), "RedeemRewardLambda")
                     # Note: CDK stack doesn’t define a webhook lambda right now, but keep if you still use it:
                     webhook_lambda = icon_with_label(Lambda(""), "WebhookLambda")
 
-                with Cluster("DynamoDB Tables"):
+                with Cluster("DynamoDB Tables",
+                    graph_attr=CLUSTER_LABEL_ATTR):
                     runners_table = icon_with_label(DynamodbTable(""), "RunnersTable")
                     hosts_table = icon_with_label(DynamodbTable(""), "HostsTable")
                     rewards_table = icon_with_label(DynamodbTable(""), "RewardsTable")
@@ -104,51 +119,50 @@ with Diagram(
                         "RedemptionsTable",
                     )
 
-                with Cluster("Storage"):
+                with Cluster("Storage", graph_attr=CLUSTER_LABEL_ATTR):
                     proof_bucket = icon_with_label(
                         SimpleStorageServiceS3Bucket(""),
                         "ProofOfWorkBucket",
                     )
 
-                with Cluster("Config / Secrets"):
+                with Cluster("Config / Secrets", graph_attr=CLUSTER_LABEL_ATTR):
                     param_store = icon_with_label(
                         SystemsManagerParameterStore(""),
                         "SSM Secret Store",
                     )
 
     # NextJS -> GraphQL
-    web_client >> Edge(label="GraphQL over HTTPS") >> appsync
+    web_client >> Edge(label="GraphQL over HTTPS", fontsize="36") >> appsync
 
     # GraphQL -> resolvers
     appsync >> query_lambda
     appsync >> mutation_lambda
 
     # Resolvers -> DynamoDB (based on env vars + grants)
-    query_lambda >> Edge(label="Read") >> runners_table
-    query_lambda >> hosts_table
-    query_lambda >> rewards_table
+    query_lambda >> Edge(label="Read", fontsize=FONT_SIZE) >> runners_table
+    query_lambda >> Edge(label="Read", fontsize=FONT_SIZE) >> hosts_table
+    query_lambda >> Edge(label="Read", fontsize=FONT_SIZE) >> rewards_table
 
-    mutation_lambda >> Edge(label="Read/Write") >> runners_table
-    mutation_lambda >> hosts_table
-    mutation_lambda >> rewards_table
-    mutation_lambda >> redemption_requests_table
+    mutation_lambda >> Edge(label="Read/Write", fontsize=FONT_SIZE) >> runners_table
+    mutation_lambda >> Edge(label="Read/Write", fontsize=FONT_SIZE) >> hosts_table
+    mutation_lambda >> Edge(label="Read/Write", fontsize=FONT_SIZE) >> rewards_table
+    mutation_lambda >> Edge(label="Read/Write", fontsize=FONT_SIZE) >> redemption_requests_table
 
     # Mutation lambda reads from S3 bucket + reads SSM parameters (per CDK grants/policies)
-    mutation_lambda >> Edge(label="Read objects") >> proof_bucket
-    mutation_lambda >> Edge(label="GetParameter") >> param_store
+    mutation_lambda >> Edge(label="Read objects", fontsize=FONT_SIZE) >> proof_bucket
+    mutation_lambda >> Edge(label="GetParameter", fontsize=FONT_SIZE) >> param_store
 
     # REST entrypoint
-    web_client >> Edge(label="Redeem API") >> api_gateway
+    web_client >> Edge(label="Redeem API", fontsize=FONT_SIZE) >> api_gateway
     api_gateway >> redeem_lambda
     api_gateway >> webhook_lambda
 
     # Redeem lambda accesses DynamoDB + SSM + Tremendous
-    redeem_lambda >> Edge(label="Read/Write") >> redemption_requests_table
+    redeem_lambda >> Edge(label="Read/Write", fontsize=FONT_SIZE) >> redemption_requests_table
     redeem_lambda >> runners_table
     redeem_lambda >> rewards_table
-    redeem_lambda >> Edge(label="GetParameter") >> param_store
-    redeem_lambda >> Edge(label="Send reward / fulfillment") >> tremendous
-
+    redeem_lambda >> Edge(label="GetParameter", fontsize=FONT_SIZE) >> param_store
+    redeem_lambda >> Edge(label="Send reward / fulfillment", fontsize=FONT_SIZE) >> tremendous
     # same-rank rows (key for horizontal legibility)
     d.dot.subgraph(
         name="rank_resolvers",
