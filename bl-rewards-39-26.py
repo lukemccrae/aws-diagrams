@@ -11,6 +11,9 @@ from diagrams.aws.integration import Appsync
 from diagrams.aws.compute import Lambda
 from diagrams.aws.database import DynamodbTable
 from diagrams.aws.network import APIGateway
+from diagrams.aws.storage import SimpleStorageServiceS3Bucket
+from diagrams.aws.management import SystemsManagerParameterStore
+from diagrams.aws.security import IdentityAndAccessManagementIamRole
 
 
 def icon_with_label(icon_node: Node, text: str, *, fontsize: str = "22") -> Node:
@@ -58,7 +61,7 @@ with Diagram(
     graph_attr=graph_attr,
     node_attr=node_attr,
     edge_attr=edge_attr,
-):
+) as d:
     # External clients / systems
     web_client = icon_with_label(Client(""), "NextJS/Web Client\n(Burrito League Rewards UI)")
     tremendous = icon_with_label(User(""), "Tremendous\n(External)")
@@ -66,22 +69,35 @@ with Diagram(
     with Cluster("AWS Account"):
         with Cluster("Deployment Region"):
             with Cluster("Burrito League Rewards Stack"):
-                appsync = icon_with_label(Appsync(""), "AWS AppSync GraphQL API\n(burrito-league-rewards)")
-                api_gateway = icon_with_label(APIGateway(""), "Amazon API Gateway\n(burrito-league-rewards-api)")
+                appsync = icon_with_label(Appsync(""), "AWS AppSync GraphQL API\n(runner-rewards-api)")
+                api_gateway = icon_with_label(APIGateway(""), "Amazon API Gateway\n(RunnerRewardsRestApi)\n/redeem")
 
                 with Cluster("GraphQL Resolvers"):
                     query_lambda = icon_with_label(Lambda(""), "QueryResolverLambda")
                     mutation_lambda = icon_with_label(Lambda(""), "MutationResolverLambda")
 
                 with Cluster("REST/API Handlers"):
-                    redeem_lambda = icon_with_label(Lambda(""), "RedeemLambda")
+                    redeem_lambda = icon_with_label(Lambda(""), "RedeemRewardLambda")
+                    # Note: CDK stack doesn’t define a webhook lambda right now, but keep if you still use it:
                     webhook_lambda = icon_with_label(Lambda(""), "WebhookLambda")
 
                 with Cluster("DynamoDB Tables"):
-                    host_table = icon_with_label(DynamodbTable(""), "HostsTable")
-                    token_table = icon_with_label(DynamodbTable(""), "RedemptionTokensTable")
-                    redemption_table = icon_with_label(DynamodbTable(""), "RedemptionsTable")
+                    runners_table = icon_with_label(DynamodbTable(""), "RunnersTable")
+                    hosts_table = icon_with_label(DynamodbTable(""), "HostsTable")
+                    rewards_table = icon_with_label(DynamodbTable(""), "RewardsTable")
+                    redemption_requests_table = icon_with_label(DynamodbTable(""), "RedemptionRequestsTable")
 
+                with Cluster("Storage"):
+                    proof_bucket = icon_with_label(
+                        SimpleStorageServiceS3Bucket(""),
+                        "ProofOfWorkBucket\n(runner-rewards-proof-<account>)",
+                    )
+
+                with Cluster("Config / Secrets"):
+                    param_store = icon_with_label(
+                        SystemsManagerParameterStore(""),
+                        "SSM Parameter Store\n(TREMENDOUS_API_KEY,\nTOKEN_SECRET_PARAM)",
+                    )
     # NextJS -> GraphQL
     web_client >> Edge(label="GraphQL over HTTPS") >> appsync
 
@@ -89,26 +105,38 @@ with Diagram(
     appsync >> query_lambda
     appsync >> mutation_lambda
 
-    # Resolvers -> DynamoDB (simplified)
-    query_lambda >> Edge(label="Read") >> host_table
-    query_lambda >> token_table
-    query_lambda >> redemption_table
+    # Resolvers -> DynamoDB (based on env vars + grants)
+    query_lambda >> Edge(label="Read") >> runners_table
+    query_lambda >> hosts_table
+    query_lambda >> rewards_table
 
-    mutation_lambda >> Edge(label="Read/Write") >> host_table
-    mutation_lambda >> token_table
-    mutation_lambda >> redemption_table
+    mutation_lambda >> Edge(label="Read/Write") >> runners_table
+    mutation_lambda >> hosts_table
+    mutation_lambda >> rewards_table
+    mutation_lambda >> redemption_requests_table
 
-    # Optional/parallel REST entrypoint (redeem flow, webhooks, etc.)
-    web_client >> Edge(label="Redeem / Utility API") >> api_gateway
+    # Mutation lambda reads from S3 bucket + reads SSM parameters (per CDK grants/policies)
+    mutation_lambda >> Edge(label="Read objects") >> proof_bucket
+    mutation_lambda >> Edge(label="GetParameter") >> param_store
+
+    # REST entrypoint
+    web_client >> Edge(label="Redeem API") >> api_gateway
     api_gateway >> redeem_lambda
     api_gateway >> webhook_lambda
 
-    redeem_lambda >> Edge(label="Read/Write") >> token_table
-    redeem_lambda >> redemption_table
-
-    webhook_lambda >> Edge(label="Read/Write") >> redemption_table
-
-    # External rewards provider
+    # Redeem lambda accesses DynamoDB + SSM + Tremendous
+    redeem_lambda >> Edge(label="Read/Write") >> redemption_requests_table
+    redeem_lambda >> runners_table
+    redeem_lambda >> rewards_table
+    redeem_lambda >> Edge(label="GetParameter") >> param_store
     redeem_lambda >> Edge(label="Send reward / fulfillment") >> tremendous
+
+    # IAM relationships (optional / conceptual)
+    cw_logs_policy >> auth_role
+    cw_logs_policy >> query_role
+    cw_logs_policy >> mutation_role
+    cw_logs_policy >> redeem_role
+
+    auth_role >> auth_role  # keeps node in cluster without extra arrows to lambdas
 
 print("Diagram generated: bl_rewards_architecture.png")
