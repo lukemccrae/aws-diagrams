@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Generate Endurance Pools architecture diagram
-Usage: python generate_endurance_pools_diagram.py
+Usage: python race-purse-3-9-26.py
 Requires: pip install diagrams
 """
 
-from diagrams import Diagram, Cluster, Edge
+from diagrams import Diagram, Cluster, Edge, Node
 from diagrams.aws.general import User, Client
 from diagrams.aws.integration import Appsync
 from diagrams.aws.compute import Lambda
@@ -13,73 +13,83 @@ from diagrams.aws.database import DynamodbTable
 from diagrams.aws.network import APIGateway
 from diagrams.aws.management import SystemsManagerParameterStore
 
+
+def icon_with_label(icon_node: Node, text: str, *, fontsize: str = "48") -> Node:
+    # Prevent icon labels from overlapping the icon itself; render text as a separate node
+    icon_node.label = ""
+    label_node = Node(text, shape="plaintext", fontsize=fontsize)
+
+    # Invisible edge "attaches" the label to the icon while keeping it on blank canvas space
+    icon_node >> Edge(style="invis") >> label_node
+    return icon_node
+
+
 graph_attr = {
     "rankdir": "LR",
-    "fontsize": "24",
-    "pad": "1.5",
-    "nodesep": "1.2",
-    "ranksep": "1.5",
+
+    # Make it "slide-shaped" (Graphviz uses inches for size)
+    # 13.333 x 7.5 == 16:9 at 96 DPI-ish thinking for PPT widescreen
+    "ratio": "fill",
+    "size": "13.333,7.5!",
+    "pad": "0.15",
+
+    # Layout tuning: encourage horizontal spread, reduce vertical expansion
+    "nodesep": "0.9",
+    "ranksep": "0.8",
+
     "splines": "spline",
+    "compound": "true",
+    "newrank": "true",
+    "fontsize": "48",
 }
 
-node_attr = {
-    "fontsize": "18",
-    "margin": "0",
-}
+# Icon nodes themselves should have effectively no label (we use plaintext label nodes)
+node_attr = {"fontsize": "15", "margin": "0"}
 
-edge_attr = {
-    "fontsize": "16",
-}
+# Edge label readability
+edge_attr = {"fontsize": "28"}
 
 with Diagram(
     "Endurance Pools CDK Stack",
+    direction="LR",
     show=False,
     filename="endurance_pools_architecture",
     graph_attr=graph_attr,
     node_attr=node_attr,
     edge_attr=edge_attr,
-):
-
-    # External clients / systems
-    web_client = Client("NextJS/Web Client\n(Race Purse UI)")
-    stripe = User("Stripe\n(External)")
+    # optional: if you have a lot of crossings, DOT is usually best for "architecture" diagrams
+    # graph_attr already implies DOT, but leaving explicit controls to Graphviz
+) as d:
+    web_client = icon_with_label(Client(""), "NextJS Web Client\n(Race Purse UI)")
+    stripe = icon_with_label(User(""), "Stripe\n(External)")
 
     with Cluster("AWS Account"):
-
         with Cluster("Deployment Region"):
-
             with Cluster("Endurance Pools Stack"):
-
-                appsync = Appsync("AWS AppSync\nGraphQL API")
-                api_gateway = APIGateway("Amazon API Gateway\nRacePurseDonationAPI")
+                appsync = icon_with_label(Appsync(""), "AWS AppSync\nGraphQL API")
+                api_gateway = icon_with_label(APIGateway(""), "API Gateway\n(Donation API)")
 
                 with Cluster("GraphQL Resolvers"):
-
-                    query_lambda = Lambda("QueryResolverLambda")
-                    mutation_lambda = Lambda("MutationResolverLambda")
+                    query_lambda = icon_with_label(Lambda(""), "Query\nResolver")
+                    mutation_lambda = icon_with_label(Lambda(""), "Mutation\nResolver")
 
                 with Cluster("Payment Handlers"):
-
-                    create_checkout = Lambda("StripeCreateCheckoutSessionLambda")
-                    stripe_webhook = Lambda("StripeWebhookLambda")
+                    create_checkout = icon_with_label(Lambda(""), "Create\nCheckout")
+                    stripe_webhook = icon_with_label(Lambda(""), "Stripe\nWebhook")
 
                 with Cluster("DynamoDB Tables"):
+                    events_table = icon_with_label(DynamodbTable(""), "Events")
+                    donations_table = icon_with_label(DynamodbTable(""), "Donations")
+                    tiers_table = icon_with_label(DynamodbTable(""), "Tiers")
+                    emojis_table = icon_with_label(DynamodbTable(""), "Emojis")
 
-                    events_table = DynamodbTable("EventTable")
-                    donations_table = DynamodbTable("DonationsTable")
-                    tiers_table = DynamodbTable("TiersTable")
-                    emojis_table = DynamodbTable("EmojisTable")
+                param_store = icon_with_label(SystemsManagerParameterStore(""), "Parameter\nStore")
 
-                param_store = SystemsManagerParameterStore("Parameter Store")
-
-    # NextJS -> GraphQL
-    web_client >> Edge(label="GraphQL over HTTPS") >> appsync
-
-    # GraphQL -> resolver lambdas
+    # Flows
+    web_client >> Edge(label="GraphQL") >> appsync
     appsync >> query_lambda
     appsync >> mutation_lambda
 
-    # Resolvers -> DynamoDB
     query_lambda >> Edge(label="Read") >> events_table
     query_lambda >> donations_table
     query_lambda >> tiers_table
@@ -90,19 +100,36 @@ with Diagram(
     mutation_lambda >> tiers_table
     mutation_lambda >> emojis_table
 
-    # NextJS -> API Gateway
-    web_client >> Edge(label="Payments API") >> api_gateway
-
-    # API Gateway -> payment lambdas
+    web_client >> Edge(label="Payments") >> api_gateway
     api_gateway >> create_checkout
     api_gateway >> stripe_webhook
 
-    # Stripe interactions
-    create_checkout >> Edge(label="Create Checkout Session") >> stripe
-    stripe >> Edge(label="Webhook Events") >> api_gateway
+    create_checkout >> Edge(label="Checkout session") >> stripe
+    stripe >> Edge(label="Webhook") >> api_gateway
 
-    # Parameter Store reads
-    create_checkout >> Edge(label="Read config/secret values") >> param_store
-    stripe_webhook >> Edge(label="Read config/secret values") >> param_store
+    create_checkout >> Edge(label="Read") >> param_store
+    stripe_webhook >> Edge(label="Read") >> param_store
+
+    # same-rank rows (key for horizontal legibility)
+    d.dot.subgraph(
+        name="rank_resolvers",
+        graph_attr={"rank": "same"},
+        body=[f"{query_lambda._id}", f"{mutation_lambda._id}"],
+    )
+    d.dot.subgraph(
+        name="rank_payments",
+        graph_attr={"rank": "same"},
+        body=[f"{create_checkout._id}", f"{stripe_webhook._id}"],
+    )
+    d.dot.subgraph(
+        name="rank_tables",
+        graph_attr={"rank": "same"},
+        body=[
+            f"{events_table._id}",
+            f"{donations_table._id}",
+            f"{tiers_table._id}",
+            f"{emojis_table._id}",
+        ],
+    )
 
 print("Diagram generated: endurance_pools_architecture.png")
