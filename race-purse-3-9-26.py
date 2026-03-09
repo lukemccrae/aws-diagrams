@@ -30,7 +30,7 @@ graph_attr = {
     # Make it "slide-shaped" (Graphviz uses inches for size)
     # 13.333 x 7.5 == 16:9 at 96 DPI-ish thinking for PPT widescreen
     "ratio": "fill",
-    "size": "13.333,7.5!",
+    "size": "16,9!"
     "pad": "0.15",
 
     # Layout tuning: encourage horizontal spread, reduce vertical expansion
