@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate Endurance Pools architecture diagram
+Generate Race Purse architecture diagram
 Usage: python race-purse-3-9-26.py
 Requires: pip install diagrams
 """
@@ -30,7 +30,7 @@ graph_attr = {
     # Make it "slide-shaped" (Graphviz uses inches for size)
     # 13.333 x 7.5 == 16:9 at 96 DPI-ish thinking for PPT widescreen
     "ratio": "fill",
-    "size": "16,9!"
+    "size": "22,15!",
     "pad": "0.15",
 
     # Layout tuning: encourage horizontal spread, reduce vertical expansion
@@ -50,7 +50,7 @@ node_attr = {"fontsize": "15", "margin": "0"}
 edge_attr = {"fontsize": "28"}
 
 with Diagram(
-    "Endurance Pools CDK Stack",
+    "Race Purse CDK Stack",
     direction="LR",
     show=False,
     filename="endurance_pools_architecture",
@@ -65,7 +65,7 @@ with Diagram(
 
     with Cluster("AWS Account"):
         with Cluster("Deployment Region"):
-            with Cluster("Endurance Pools Stack"):
+            with Cluster("Race Purse Stack"):
                 appsync = icon_with_label(Appsync(""), "AWS AppSync\nGraphQL API")
                 api_gateway = icon_with_label(APIGateway(""), "API Gateway\n(Donation API)")
 
