@@ -53,6 +53,11 @@ graph_attr = {
 node_attr = {
     "fontsize": "15",
     "margin": "0",
+    # make AWS service icons larger
+    "width": "2.0",        # try 1.5–3.0
+    "height": "2.0",
+    "fixedsize": "true",   # forces the node to use width/height
+    "imagescale": "true",  # scale the icon to the node size
 }
 
 edge_attr = {
